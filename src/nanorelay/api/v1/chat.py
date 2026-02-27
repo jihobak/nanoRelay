@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 
 from nanorelay.core.config import settings
 from nanorelay.core.exceptions import InvalidRequestError
+from nanorelay.runner.runner import LlamaServerClient, Runner
 from nanorelay.schemas.chat import (
     ChatCompletionMessage, 
     ChatCompletionRequest, 
@@ -16,7 +17,7 @@ from nanorelay.schemas.chat import (
 router = APIRouter(prefix="/chat")
 
 
-@router.get("/health")
+@router.get("/healthz")
 async def health_check():
     return {"status": "ok"}
 
@@ -33,20 +34,28 @@ async def chat_completions(request: Request, body: ChatCompletionRequest):
 
         if role != MessageRole.user:
             raise InvalidRequestError("Last message must have role 'user'")
-                
-        if settings.backend_url is None:
-            return ChatCompletionResponse(
-                id=request_id,
-                created=int(time.time()),
-                model=body.model,
-                choices=[
-                    ChatCompletionChoice(
-                        message=ChatCompletionMessage(
-                            role=MessageRole.assistant,
-                            content=f"Echo: {prompt}"
-                        ),
-                        finish_reason="stop"
+        
+        if not prompt.strip():
+            raise InvalidRequestError("Prompt cannot be empty")
+
+        client = LlamaServerClient(settings.backend_url)
+        text_output = await client.chat(prompt)
+
+        if text_output is None:
+            runner = Runner()
+            text_output = runner.run(prompt)
+
+        return ChatCompletionResponse(
+            id=request_id,
+            created=int(time.time()),
+            model=body.model,
+            choices=[
+                ChatCompletionChoice(
+                    message=ChatCompletionMessage(
+                        role=MessageRole.assistant,
+                        content=text_output
                     ),
-                ]
-            )
-    
+                    finish_reason="stop"
+                ),
+            ]
+        )
