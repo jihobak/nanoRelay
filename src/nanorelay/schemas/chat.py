@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # Request
@@ -38,6 +38,8 @@ class ChatCompletionChoice(BaseModel):
 
 
 class ChatCompletionResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    
     """
      Based on 'https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create'
     """
