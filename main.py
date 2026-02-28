@@ -23,6 +23,19 @@ async def nanorelay_exception_handler(request: Request, exc: NanoRelayException)
     )
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "message": "Internal server error",
+                "type": type(exc).__name__
+            }
+        }
+    )
+
+
 if __name__ == "__main__":    
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=settings.port, reload=True)
