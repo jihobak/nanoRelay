@@ -1,3 +1,4 @@
+import json
 import time
 from typing import AsyncGenerator
 from pydantic import BaseModel
@@ -38,18 +39,35 @@ class Dispatcher:
         backend = self._resolve_backend(model)
 
         if backend is None:
-            # this happend when 'NANORELAY_BACKEND_URL' is not set
-            return {
-                "id": request_id,
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": model,
-                "choices": [{
-                    "index": 0,
-                    "message": {"role": "assistant", "content": f"Echo: {messages[-1].content}"},
-                    "finish_reason": "stop"
-                }]
-            }
+            if stream:
+                async def echo_stream():
+                    # yield a single chunk, then done
+                    chunk = {
+                        "id": request_id,
+                        "object": "chat.completion.chunk",
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": f"Echo: {messages[-1].content}"},
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+                return echo_stream()
+            else:
+                # this happend when 'NANORELAY_BACKEND_URL' is not set
+                return {
+                    "id": request_id,
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": f"Echo: {messages[-1].content}"},
+                        "finish_reason": "stop"
+                    }]
+                }
         
         if stream:
             return self._client.chat_stream(
