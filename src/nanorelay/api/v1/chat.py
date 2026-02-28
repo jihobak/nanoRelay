@@ -2,6 +2,7 @@ import time
 from typing import Annotated
 import uuid
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 
 from nanorelay.core.config import settings
 from nanorelay.core.dependencies import get_dispatcher
@@ -42,7 +43,9 @@ async def chat_completions(
         if not last_user_msg.content.strip():
             raise InvalidRequestError("Prompt cannot be empty")
             
-        model_output = await dispatcher.dispatch(body.messages, body.model)
-        model_output["id"] = request_id
+        model_output = await dispatcher.dispatch(request_id, body.messages, body.model, body.stream)
 
-        return ChatCompletionResponse(**model_output)
+        if body.stream:
+            return StreamingResponse(model_output, media_type="text/event-stream")
+        else:
+            return ChatCompletionResponse(**model_output)

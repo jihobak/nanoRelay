@@ -1,4 +1,5 @@
 import time
+from typing import AsyncGenerator
 from pydantic import BaseModel
 from nanorelay.core.config import settings
 from nanorelay.core.exceptions import InvalidRequestError
@@ -23,7 +24,7 @@ class Dispatcher:
     def __init__(self):
         self._client = OpenAICompatClient()
 
-    def _resolve_backend(self, model: str) -> BackendConfig:
+    def _resolve_backend(self, model: str) -> BackendConfig | None:
         if model not in MODELS_MAP:
             raise InvalidRequestError(f"'{model}' is not supported")
         
@@ -33,13 +34,13 @@ class Dispatcher:
 
         return BackendConfig(**MODELS_MAP[model])
 
-    async def dispatch(self, messages: list[ChatMessage], model: str) -> dict:
+    async def dispatch(self, request_id: str, messages: list[ChatMessage], model: str, stream: bool) -> dict | AsyncGenerator[str, None]:
         backend = self._resolve_backend(model)
 
         if backend is None:
             # this happend when 'NANORELAY_BACKEND_URL' is not set
             return {
-                "id": "",
+                "id": request_id,
                 "object": "chat.completion",
                 "created": int(time.time()),
                 "model": model,
@@ -49,10 +50,22 @@ class Dispatcher:
                     "finish_reason": "stop"
                 }]
             }
+        
+        if stream:
+            return self._client.chat_stream(
+                request_id=request_id,
+                base_url=backend.url,
+                messages=messages,
+                model=model,
+                timeout=backend.timeout,
+            )
+        else:
+            response = await self._client.chat(
+                request_id=request_id,
+                base_url=backend.url,
+                messages=messages,
+                model=model,
+                timeout=backend.timeout,
+            )
 
-        return await self._client.chat(
-            base_url=backend.url,
-            messages=messages,
-            model=model,
-            timeout=backend.timeout,
-        )
+        return response
