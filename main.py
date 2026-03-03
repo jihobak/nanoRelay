@@ -11,7 +11,7 @@ from nanorelay.relay.dispatcher import Dispatcher
 async def lifespan(app: FastAPI):
     app.state.dispatcher = Dispatcher()
     yield
-    await app.state.dispatcher._client.close()
+    await app.state.dispatcher.close()
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(v1_router)

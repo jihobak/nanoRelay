@@ -25,6 +25,9 @@ class Dispatcher:
     def __init__(self):
         self._client = OpenAICompatClient()
 
+    async def close(self):
+        await self._client.close()
+
     def _resolve_backend(self, model: str) -> BackendConfig | None:
         if model not in MODELS_MAP:
             raise InvalidRequestError(f"'{model}' is not supported")
