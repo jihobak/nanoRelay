@@ -37,29 +37,41 @@ class Dispatcher:
             return None
 
         return BackendConfig(**MODELS_MAP[model])
+    
+    async def _echo_stream(
+        self,
+        request_id: str,
+        model: str,
+        content: str,
+    ) -> AsyncGenerator[str, None]:
+        chunk = {
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": content},
+                "finish_reason": "stop"
+            }]
+        }
+        yield f"data: {json.dumps(chunk)}\n\n"
+        yield "data: [DONE]\n\n"
 
-    async def dispatch(self, request_id: str, messages: list[ChatMessage], model: str, stream: bool) -> dict | AsyncGenerator[str, None]:
+    async def dispatch(
+        self,
+        request_id: str,
+        messages: list[ChatMessage],
+        model: str,
+        stream: bool,
+    ) -> dict | AsyncGenerator[str, None]:
         backend = self._resolve_backend(model)
+        echo_content = f"Echo: {messages[-1].content}"
 
         if backend is None:
             if stream:
-                async def echo_stream():
-                    # yield a single chunk, then done
-                    chunk = {
-                        "id": request_id,
-                        "object": "chat.completion.chunk",
-                        "model": model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"role": "assistant", "content": f"Echo: {messages[-1].content}"},
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-                return echo_stream()
+                return self._echo_stream(request_id, model, echo_content)
             else:
-                # this happend when 'NANORELAY_BACKEND_URL' is not set
                 return {
                     "id": request_id,
                     "object": "chat.completion",
@@ -67,11 +79,11 @@ class Dispatcher:
                     "model": model,
                     "choices": [{
                         "index": 0,
-                        "message": {"role": "assistant", "content": f"Echo: {messages[-1].content}"},
+                        "message": {"role": "assistant", "content": echo_content},
                         "finish_reason": "stop"
                     }]
                 }
-        
+
         if stream:
             return self._client.chat_stream(
                 request_id=request_id,
@@ -80,13 +92,11 @@ class Dispatcher:
                 model=model,
                 timeout=backend.timeout,
             )
-        else:
-            response = await self._client.chat(
-                request_id=request_id,
-                base_url=backend.url,
-                messages=messages,
-                model=model,
-                timeout=backend.timeout,
-            )
 
-        return response
+        return await self._client.chat(
+            request_id=request_id,
+            base_url=backend.url,
+            messages=messages,
+            model=model,
+            timeout=backend.timeout,
+        )
