@@ -1,6 +1,5 @@
-from functools import lru_cache
+from fastapi import Request
 from nanorelay.relay.dispatcher import Dispatcher
 
-@lru_cache
-def get_dispatcher() -> Dispatcher:
-    return Dispatcher()
+def get_dispatcher(request: Request) -> Dispatcher:
+    return request.app.state.dispatcher

@@ -1,12 +1,19 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 
 from nanorelay.api.v1 import router as v1_router
 from nanorelay.core.config import settings
 from nanorelay.core.exceptions import NanoRelayException
+from nanorelay.relay.dispatcher import Dispatcher
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.dispatcher = Dispatcher()
+    yield
+    await app.state.dispatcher.close()
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 app.include_router(v1_router)
 
 

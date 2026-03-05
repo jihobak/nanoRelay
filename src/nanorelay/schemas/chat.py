@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Literal
+from typing import Literal, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -44,7 +44,7 @@ class ChatCompletionResponse(BaseModel):
      Based on 'https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create'
     """
     id: str
-    object: Literal["chat.completion"] = "chat.completion"
+    object: Union[Literal["chat.completion"], Literal["chat.completion.chunk"]] = "chat.completion"
     created: int
     model: str
     choices: list[ChatCompletionChoice]
