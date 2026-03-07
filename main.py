@@ -6,10 +6,12 @@ from nanorelay.api.v1 import router as v1_router
 from nanorelay.core.config import settings
 from nanorelay.core.exceptions import NanoRelayException
 from nanorelay.relay.dispatcher import Dispatcher
+from nanorelay.core.backend_config import load_backend_config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.dispatcher = Dispatcher()
+    backend_config = load_backend_config(settings.backend_config_path)
+    app.state.dispatcher = Dispatcher(config = backend_config)
     yield
     await app.state.dispatcher.close()
 
