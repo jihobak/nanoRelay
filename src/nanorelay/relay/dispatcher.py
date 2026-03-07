@@ -1,62 +1,49 @@
 import json
 import time
 from typing import AsyncGenerator
+import httpx
 from pydantic import BaseModel
+from nanorelay.backends import Backend, EchoBackend, LocalBackend, ModalBackend
+from nanorelay.core.backend_config import BackendConfig
 from nanorelay.core.config import settings
 from nanorelay.core.exceptions import InvalidRequestError
-from nanorelay.relay.client import OpenAICompatClient
 from nanorelay.schemas.chat import ChatMessage
 
 
-MODELS_MAP = {
-    "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf": {
-        "url": settings.backend_url,
-        "timeout": 60.0
-    },
-}
-
-
-class BackendConfig(BaseModel):
-    url: str
-    timeout: float = 60.0
-
-
 class Dispatcher:
-    def __init__(self):
-        self._client = OpenAICompatClient()
+    BACKEND_TYPES: dict[str, type[Backend]] = {
+        "echo" : EchoBackend,
+        "local": LocalBackend,
+        "modal": ModalBackend,
+    }
+
+    def __init__(self, config: BackendConfig):
+        self._http_client = httpx.AsyncClient()
+        self._backends = self._build_backends(config, self._http_client)
+        self._default = config.default
+
+        if self._default not in self._backends:
+            raise ValueError(f"Default backend '{self._default}' is not defined in {list(self._backends.keys())}")
 
     async def close(self):
-        await self._client.close()
+        await self._http_client.aclose()
 
-    def _resolve_backend(self, model: str) -> BackendConfig | None:
-        if model not in MODELS_MAP:
-            raise InvalidRequestError(f"'{model}' is not supported")
-        
-        config = MODELS_MAP[model]
-        if config.get("url") is None:
-            return None
-
-        return BackendConfig(**MODELS_MAP[model])
+    def _build_backends(self, config, http_client): 
+        backends = {}
+        backends["echo"] = EchoBackend()  # always include echo backend for testing
+        for entry in config.backends:
+            cls = self.BACKEND_TYPES.get(entry.type)
+            if cls is None:
+                raise ValueError(f"Unsupported backend type '{entry.type}'")
+            backends[entry.type] = cls(url = entry.url, timeout = entry.timeout, http_client = http_client)
+        print(backends)
+        return backends
     
-    async def _echo_stream(
-        self,
-        request_id: str,
-        model: str,
-        content: str,
-    ) -> AsyncGenerator[str, None]:
-        chunk = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": {"role": "assistant", "content": content},
-                "finish_reason": "stop"
-            }]
-        }
-        yield f"data: {json.dumps(chunk)}\n\n"
-        yield "data: [DONE]\n\n"
+    def _resolve_backend(self, model: str) -> tuple [str, Backend]:
+        if model and model in self._backends:
+            return model, self._backends[model]
+        
+        return self._default, self._backends[self._default]
 
     async def dispatch(
         self,
@@ -64,39 +51,8 @@ class Dispatcher:
         messages: list[ChatMessage],
         model: str,
         stream: bool,
-    ) -> dict | AsyncGenerator[str, None]:
-        backend = self._resolve_backend(model)
-        echo_content = f"Echo: {messages[-1].content}"
-
-        if backend is None:
-            if stream:
-                return self._echo_stream(request_id, model, echo_content)
-            else:
-                return {
-                    "id": request_id,
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "message": {"role": "assistant", "content": echo_content},
-                        "finish_reason": "stop"
-                    }]
-                }
-
-        if stream:
-            return self._client.chat_stream(
-                request_id=request_id,
-                base_url=backend.url,
-                messages=messages,
-                model=model,
-                timeout=backend.timeout,
-            )
-
-        return await self._client.chat(
-            request_id=request_id,
-            base_url=backend.url,
-            messages=messages,
-            model=model,
-            timeout=backend.timeout,
-        )
+    ) -> tuple[str, dict | AsyncGenerator[str, None]]:
+        backend_name, backend = self._resolve_backend(model)
+        print(f"[{request_id}] Dispatching to backend '{backend_name}' with model '{model}'")
+        result = await backend.generate(request_id, messages, model, stream)
+        return backend_name, result

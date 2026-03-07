@@ -43,7 +43,7 @@ async def chat_completions(
         if not last_user_msg.content.strip():
             raise InvalidRequestError("Prompt cannot be empty")
             
-        model_output = await dispatcher.dispatch(request_id, body.messages, body.model, body.stream)
+        backend_name, model_output = await dispatcher.dispatch(request_id, body.messages, body.model, body.stream)
 
         if body.stream:
             return StreamingResponse(model_output, media_type="text/event-stream")

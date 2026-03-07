@@ -9,8 +9,8 @@ class OpenAICompatClient:
     A single HTTP client that forwards requests to any backend implementing the OpenAI /v1/chat/completions specification.
     """
 
-    def __init__(self):
-        self._client = httpx.AsyncClient()
+    def __init__(self, client: httpx.AsyncClient):
+        self._client = client
 
     async def chat(
         self,
@@ -92,5 +92,3 @@ class OpenAICompatClient:
             yield f"data: {json.dumps(error_chunk)}\n\n"
             yield "data: [DONE]\n\n"
                     
-    async def close(self):
-        await self._client.aclose()
